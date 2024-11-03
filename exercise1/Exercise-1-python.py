@@ -218,9 +218,7 @@ print(f"Largest value of f(x)=1+9*x-x^2:    {largestValue}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC First Code Snippet: This code splits a string into words, assigns a count of 1 to each word, groups them by the word, and then counts the occurrences of each word.
-# MAGIC
-# MAGIC Second Code Snippet: Similar to the first but uses reduce to sum occurrences, effectively counting each word’s frequency.
+# MAGIC ???
 
 # COMMAND ----------
 
@@ -255,7 +253,6 @@ print(f"Largest value of f(x)=1+9*x-x^2:    {largestValue}")
 
 def fifthRoot(x: float) -> float:
     y = 1.0  # initial guess
-    tolerance = 1e-7  # Set the tolerance directly inside the function
     while True:
         next_y = (4 * y + x / y ** 4) / 5
         if abs(next_y - y) < tolerance:
@@ -295,9 +292,7 @@ print(f"Fifth root of -243:     {fifthRoot(-243)}")
 
 # COMMAND ----------
 
-from pyspark.sql import SparkSession
 from pyspark.sql import DataFrame
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType
 
 myData = [
     ("Arsenal", 1886, 13),
@@ -308,22 +303,7 @@ myData = [
     ("Tottenham Hotspur", 1882, 2)
 ]
 
-schema = StructType([
-    StructField("Name", StringType(), True),
-    StructField("Founded", IntegerType(), True),
-    StructField("Titles", IntegerType(), True)
-])
-
-myData = [
-    ("Arsenal", 1886, 13),
-    ("Chelsea", 1905, 6),
-    ("Liverpool", 1892, 19),
-    ("Manchester City", 1880, 9),
-    ("Manchester United", 1878, 20),
-    ("Tottenham Hotspur", 1882, 2)
-]
-
-myDF: DataFrame = spark.createDataFrame(myData, schema)
+myDF: DataFrame = spark.createDataFrame(data, schema)
 
 myDF.show()
 
@@ -366,7 +346,7 @@ print(f"Number of rows in the DataFrame: {numberOfRows}")
 
 # COMMAND ----------
 
-numberDF: DataFrame = spark.read.option("header", "true").csv("https://tunics320f2024gen2.blob.core.windows.net/shared/exercises/ex1/numbers.csv")
+numberDF: DataFrame = spark.read.option("header", "true").csv("/mnt/data/exercises/ex1/numbers.csv")
 
 numberDF.show()
 
