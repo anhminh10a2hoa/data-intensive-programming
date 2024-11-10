@@ -50,13 +50,11 @@ from pyspark.sql import Row
 
 # COMMAND ----------
 
-file = "abfss://shared@tunics320f2024gen2.blob.core.windows.net/shared/exercises/ex2/nordics_weather.csv"
-weatherDataFrame: DataFrame = spark.read.option("header","true").option("inferSchema","true").option("sep",",").csv(file)
-
-weatherDF: DataFrame = ???
+file = "abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex2/nordics_weather.csv"
+weatherDF: DataFrame = spark.read.option("header","true").option("inferSchema","true").option("sep",";").csv(file)
 
 # code that prints out the schema for weatherDF
-???
+weatherDF.printSchema()
 
 # COMMAND ----------
 
@@ -92,14 +90,14 @@ weatherDF: DataFrame = ???
 
 # COMMAND ----------
 
-weatherSample1: List[Row] = ???
+weatherSample1: List[Row] = weatherDF.head(7)
 
 print("The first seven rows of the weather data frame:")
 print(*[list(row.asDict().values()) for row in weatherSample1], sep="\n")  # prints each Row to its own line
 print("==============================")
 
 
-weatherSample2: List[Row] = ???
+weatherSample2: List[Row] = weatherDF.select("country", "date", "temperature_avg").tail(6)
 
 print("The last six rows of the weather data frame:")
 print(*[list(row.asDict().values()) for row in weatherSample2], sep="\n")
@@ -137,8 +135,8 @@ print(*[list(row.asDict().values()) for row in weatherSample2], sep="\n")
 
 # COMMAND ----------
 
-minTemp: float = ???
-maxTemp: float = ???
+minTemp: float = weatherDF.agg(F.min("temperature_min")).first()[0]
+maxTemp: float = weatherDF.agg(F.max("temperature_max")).first()[0]
 
 print(f"Min temperature is {minTemp}")
 print(f"Max temperature is {maxTemp}")
@@ -165,10 +163,10 @@ print(f"Max temperature is {maxTemp}")
 
 # COMMAND ----------
 
-weatherDFWithYear: DataFrame = ???
+weatherDFWithYear: DataFrame = weatherDF.withColumn("year", F.year("date"))
 
 # code that prints out the schema for weatherDFWithYear
-???
+weatherDFWithYear.printSchema()
 
 # COMMAND ----------
 
@@ -198,7 +196,10 @@ weatherDFWithYear: DataFrame = ???
 
 # COMMAND ----------
 
-temperatureDF: DataFrame = ???
+temperatureDF: DataFrame = weatherDFWithYear.groupBy("year").agg(
+    F.min("temperature_min").alias("temperature_min"),
+    F.max("temperature_max").alias("temperature_max")
+).orderBy(F.desc("year"))
 
 temperatureDF.show()
 
@@ -237,7 +238,12 @@ temperatureDF.show()
 
 # COMMAND ----------
 
-task6DF: DataFrame = ???
+task6DF: DataFrame = weatherDFWithYear.groupBy("year", "country").agg(
+    F.count("*").alias("entries"),
+    F.round(F.min("temperature_min"), 1).alias("temperature_min"),
+    F.round(F.max("temperature_max"), 1).alias("temperature_max"),
+    F.round(F.avg("snow_depth"), 0).alias("snow_depth_avg")
+).orderBy(F.desc("year"), "country")
 
 task6DF.show()
 
@@ -282,10 +288,11 @@ task6DF.show()
 
 # COMMAND ----------
 
-min2016: float = ???
-max2017: float = ???
-difference2018: float = ???
-snow2015: float = ???
+min2016: float = task6DF.filter((F.col("year") == 2016) & (F.col("country") == "Finland")).select("temperature_min").first()[0]
+max2017: float = task6DF.filter((F.col("year") == 2017) & (F.col("country") == "Sweden")).select("temperature_max").first()[0]
+difference2018: float = (task6DF.filter((F.col("year") == 2018) & (F.col("country") == "Norway"))
+                  .select(F.col("temperature_max") - F.col("temperature_min")).first()[0])
+snow2015: float = task6DF.filter(F.col("year") == 2015).agg(F.avg("snow_depth_avg")).first()[0]
 
 print(f"Min temperature (Finland, 2016):       {min2016} °C")
 print(f"Max temperature (Sweden, 2017):         {max2017} °C")
@@ -320,20 +327,26 @@ print(f"The average snow depth (2015):          {round(snow2015)} mm")
 
 # COMMAND ----------
 
-daysBelowMinus10DF: DataFrame = ???
+daysBelowMinus10DF: DataFrame = weatherDFWithYear.filter((F.col("temperature_avg") < -10) & (F.col("country") == "Finland")) \
+    .groupBy("year").count().withColumnRenamed("count", "days_below_minus_10").orderBy("year")
 
 print("The number of days the average temperature in Finland was below -10 °C:")
 daysBelowMinus10DF.show()
 
-daysAbove5DF: DataFrame = ???
+daysAbove5DF: DataFrame = weatherDFWithYear.filter((F.col("temperature_avg") > 5) & (F.col("snow_depth") > 100)) \
+    .groupBy("country").count().withColumnRenamed("count", "days_above_5_with_snow").orderBy("country")
 
 print("The number of days the temperature in each country was above +5 °C when snow depth was above 100 mm:")
 daysAbove5DF.show()
 
 
-differenceDaysDF: DataFrame = ???
+differenceDaysDF: DataFrame = weatherDFWithYear.filter(F.col("country") == "Finland") \
+    .withColumn("temperature_diff", F.round(weatherDF["temperature_max"] - weatherDF["temperature_min"], 2)) \
+    .select("date", "temperature_diff") \
+    .orderBy(F.desc("temperature_diff")) \
+    .limit(10)
 
-println("The top 10 days in Finland with the largest temperature difference:")
+print("The top 10 days in Finland with the largest temperature difference:")
 differenceDaysDF.show()
 
 # COMMAND ----------
