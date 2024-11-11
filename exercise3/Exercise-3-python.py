@@ -80,6 +80,10 @@ from pyspark.sql.types import IntegerType
 
 # COMMAND ----------
 
+file = "abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex3/procem_iotdb.parquet/data.parquet"
+
+procemDF = spark.read.parquet(file)
+
 procemDF: DataFrame = ???
 
 ???
