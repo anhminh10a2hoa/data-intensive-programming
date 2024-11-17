@@ -151,7 +151,7 @@ procemDF.show(10, truncate=False)
 
 # COMMAND ----------
 
-hourlyDF: DataFrame = (
+hourlyDF = (
     procemDF
     .withColumn("Hour", F.from_unixtime((F.col("Time") / 1000).cast("bigint"), "yyyy-MM-dd HH:00:00").cast("timestamp"))
     .groupBy("Hour")
@@ -165,7 +165,7 @@ hourlyDF: DataFrame = (
 )
 
 hourlyDF.printSchema()
-hourlyDF.show(8, False)
+hourlyDF.show(8, truncate=False)
 
 # COMMAND ----------
 
@@ -221,7 +221,7 @@ hourlyDF.show(8, False)
 
 # COMMAND ----------
 
-dailyDF: DataFrame = (
+dailyDF = (
     hourlyDF
     .withColumn("Date", F.to_date("Hour"))
     .groupBy("Date")
@@ -236,8 +236,7 @@ dailyDF: DataFrame = (
 
 dailyDF.show()
 
-
-totalPrice: float = dailyDF.agg(F.round(F.sum("DailyCost"), 2)).first()[0]
+totalPrice = dailyDF.agg(F.round(F.sum("DailyCost"), 2)).first()[0]
 
 print(f"Total price: {totalPrice} EUR")
 
@@ -512,7 +511,7 @@ wordsDF = nonEmptyLinesDF \
     .filter((F.col("word") != "") & (~F.col("word").rlike(r"\d")))
 
 # Step 3: Count occurrences of each word
-wordCountDF: DataFrame = wordsDF.groupBy("word").count().withColumnRenamed("count", "count")
+wordCountDF = wordsDF.groupBy("word").count().withColumnRenamed("count", "count")
 
 # Display the first row to check
 first_row = wordCountDF.first()
@@ -525,7 +524,7 @@ filteredWordCountDF = wordCountDF \
 
 # Finding the most common word among these
 mostCommonWordRow = filteredWordCountDF.first()
-askedWordCount: WordCount = WordCount(word=mostCommonWordRow["word"], count=mostCommonWordRow["count"])
+askedWordCount = WordCount(word=mostCommonWordRow["word"], count=mostCommonWordRow["count"])
 
 print(f"Type of askedWordCount: {type(askedWordCount)}")
 print(f"The most common 7-letter word that starts with 's': {askedWordCount.word} (appears {askedWordCount.count} times)")
