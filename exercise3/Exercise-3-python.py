@@ -82,11 +82,11 @@ from pyspark.sql.types import IntegerType
 
 file = "abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex3/procem_iotdb.parquet/data.parquet"
 
-procemDF = spark.read.parquet(file)
+procemDF: DataFrame = spark.read.parquet(file)
 
-procemDF: DataFrame = ???
+procemDF.printSchema()
 
-???
+procemDF.show(10, truncate=False)
 
 # COMMAND ----------
 
@@ -151,7 +151,18 @@ procemDF: DataFrame = ???
 
 # COMMAND ----------
 
-hourlyDF: DataFrame = ???
+hourlyDF: DataFrame = (
+    procemDF
+    .withColumn("Hour", F.from_unixtime((F.col("Time") / 1000).cast("bigint"), "yyyy-MM-dd HH:00:00").cast("timestamp"))
+    .groupBy("Hour")
+    .agg(
+        F.avg("Temperature").alias("AvgTemperature"),
+        (F.avg("SolarPower") / 1000).alias("ProducedEnergy"),
+        ((F.avg("WaterCooling01Power") + F.avg("WaterCooling02Power") + F.avg("VentilationPower")) / 1000).alias("ConsumedEnergy"),
+        F.first("ElectricityPrice", ignorenulls=True).alias("Price")
+    )
+    .orderBy("Hour")
+)
 
 hourlyDF.printSchema()
 hourlyDF.show(8, False)
@@ -210,12 +221,23 @@ hourlyDF.show(8, False)
 
 # COMMAND ----------
 
-dailyDF: DataFrame = ???
+dailyDF: DataFrame = (
+    hourlyDF
+    .withColumn("Date", F.to_date("Hour"))
+    .groupBy("Date")
+    .agg(
+        F.round(F.avg("AvgTemperature"), 2).alias("Temperature"),
+        F.round(F.avg("ProducedEnergy"), 2).alias("ProducedEnergy"),
+        F.round(F.avg("ConsumedEnergy"), 2).alias("ConsumedEnergy"),
+        F.round(F.sum((F.col("ConsumedEnergy") - F.col("ProducedEnergy")) * F.col("Price") / 1000), 2).alias("DailyCost")
+    )
+    .orderBy("Date")
+)
 
 dailyDF.show()
 
 
-totalPrice: float = ???
+totalPrice: float = dailyDF.agg(F.round(F.sum("DailyCost"), 2)).first()[0]
 
 print(f"Total price: {totalPrice} EUR")
 
@@ -253,12 +275,14 @@ print(f"Total price: {totalPrice} EUR")
 
 # COMMAND ----------
 
-wikitextsRDD: RDD[str] = ???
+wikitextsRDD: RDD[str] = sc.textFile("abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex3/wiki/*.txt")
 
-numberOfLines: int = ???
+nonEmptyLinesRDD = wikitextsRDD.filter(lambda line: line.strip() != "")
+
+numberOfLines: int = nonEmptyLinesRDD.count()
 print(f"The number of lines with text: {numberOfLines}")
 
-lines8: List[str] = ???
+lines8: List[str] = nonEmptyLinesRDD.take(8)
 
 print("============================================================")
 # Print the first 60 characters of the first 8 lines
@@ -300,13 +324,13 @@ print(*[line[:60] for line in lines8], sep="\n")
 
 # COMMAND ----------
 
-wordsRDD: RDD[str] = ???
+wordsRDD: RDD[str] = nonEmptyLinesRDD.flatMap(lambda line: re.findall(r'\b\w+\b', line.lower())) \
+                           .filter(lambda word: not any(char.isdigit() for char in word))
 
-
-numberOfWords: float = ???
+numberOfWords: float = wordsRDD.count()
 print(f"The total number of words not containing digits: {numberOfWords}")
 
-numberOfDistinctWords: float = ???
+numberOfDistinctWords: float = wordsRDD.distinct().count()
 print(f"The total number of distinct words not containing digits: {numberOfDistinctWords}")
 
 # COMMAND ----------
@@ -332,12 +356,14 @@ print(f"The total number of distinct words not containing digits: {numberOfDisti
 
 # COMMAND ----------
 
-wordCountRDD: RDD[Tuple[str, int]] = ???
+wordCountRDD: RDD[Tuple[str, int]] = wordsRDD.map(lambda word: (word, 1)).reduceByKey(lambda a, b: a + b)
 
 print(f"First row in wordCountRDD: word: '{wordCountRDD.first()[0]}', count: {wordCountRDD.first()[1]}")
 
+sevenLetterSWords = wordCountRDD.filter(lambda pair: len(pair[0]) == 7 and pair[0].startswith('s'))
+mostCommonSevenLetterSWord = sevenLetterSWords.max(key=lambda pair: pair[1])
 
-askedWord, wordCount = ???
+askedWord, wordCount = mostCommonSevenLetterSWord
 
 print(f"The most common 7-letter word that starts with 's': {askedWord} (appears {wordCount} times)")
 
@@ -386,12 +412,14 @@ print(f"The most common 7-letter word that starts with 's': {askedWord} (appears
 
 # COMMAND ----------
 
-wikitextsDF: DataFrame = ???
+wikitextsDF: DataFrame = spark.read.text("abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex3/wiki/*.txt")
 
-linesInDF: int = ???
+nonEmptyLinesDF = wikitextsDF.filter(F.col("value") != "")
+
+linesInDF: int = nonEmptyLinesDF.count()
 print(f"The number of lines with text: {linesInDF}")
 
-first8Lines: List[str] = ???
+first8Lines: List[str] = nonEmptyLinesDF.limit(8).select(F.expr("substring(value, 1, 60)").alias("value"))
 
 print("============================================================")
 # Print the first 60 characters of the first 8 lines
@@ -402,13 +430,16 @@ wikitextsDF.show(8)
 
 # COMMAND ----------
 
-wordsDF: DataFrame = ???
+wordsDF: DataFrame = wikitextsDF.select(F.explode(F.split(wikitextsDF['value'], ' ')).alias('word')) \
+    .filter("word != ''") \
+    .filter(F.length('word') > 0) \
+    .filter(~F.col('word').rlike('[0-9]'))
 
 
-wordsInDF: int = ???
+wordsInDF: int = wordsDF.count()
 print(f"The total number of words not containing digits: {wordsInDF}")
 
-distinctWordsInDF: int = ???
+distinctWordsInDF: int = wordsDF.distinct().count()
 print(f"The total number of distinct words not containing digits: {distinctWordsInDF}")
 
 # COMMAND ----------
@@ -473,12 +504,28 @@ class WordCount:
 
 # COMMAND ----------
 
-wordCountDF: DataFrame = ???
+nonEmptyLinesDF = wikitextsDF.filter(F.col("value") != "")
 
-print(f"First row in wordCountDF: word: '{wordCountDF.first()['word']}', count: {wordCountDF.first()['count']}")
+# Step 2: Split into words, ignore digits, and normalize by lowering case
+wordsDF = nonEmptyLinesDF \
+    .select(F.explode(F.split(F.lower(F.col("value")), r"\W+")).alias("word")) \
+    .filter((F.col("word") != "") & (~F.col("word").rlike(r"\d")))
 
+# Step 3: Count occurrences of each word
+wordCountDF: DataFrame = wordsDF.groupBy("word").count().withColumnRenamed("count", "count")
 
-askedWordCount: WordCount = ???
+# Display the first row to check
+first_row = wordCountDF.first()
+
+print(f"First row in wordCountDF: word: '{first_row['word']}', count: {first_row['count']}")
+
+filteredWordCountDF = wordCountDF \
+    .filter((F.length("word") == 7) & (F.col("word").startswith("s"))) \
+    .orderBy(F.desc("count"))
+
+# Finding the most common word among these
+mostCommonWordRow = filteredWordCountDF.first()
+askedWordCount: WordCount = WordCount(word=mostCommonWordRow["word"], count=mostCommonWordRow["count"])
 
 print(f"Type of askedWordCount: {type(askedWordCount)}")
 print(f"The most common 7-letter word that starts with 's': {askedWordCount.word} (appears {askedWordCount.count} times)")
