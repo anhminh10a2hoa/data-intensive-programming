@@ -130,6 +130,14 @@ trainingDF.show(6)
 
 # COMMAND ----------
 
+schema = StructType([
+    StructField("X", DoubleType(), nullable=False),
+    StructField("label", DoubleType(), nullable=False)
+])
+
+# Recreate trainingDF with the schema applied
+trainingDF = spark.createDataFrame(trainingDF.rdd, schema)
+
 vectorAssembler: VectorAssembler = VectorAssembler(inputCols=["X"], outputCol="features")
 
 assembledTrainingDF: DataFrame = vectorAssembler.transform(trainingDF)
@@ -282,6 +290,9 @@ pyplot.show()
 
 # COMMAND ----------
 
+from pyspark.ml.feature import VectorAssembler
+from pyspark.sql import Row
+
 # Create a DataFrame with the required `X` values for prediction
 new_values = [-2.8, 3.14, 9.9, 123.45]
 new_data = spark.createDataFrame([(x,) for x in new_values], ["X"])
@@ -329,8 +340,11 @@ predictions.select("X", "prediction").show()
 
 # COMMAND ----------
 
+from pyspark.sql import functions as F
+from pyspark.sql.types import DoubleType
+
 # Read the CSV file with the correct delimiter
-salesDF: DataFrame = spark.read.csv(
+salesDF = spark.read.csv(
     "abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex4/static/superstore_sales.csv",
     header=True,
     inferSchema=True,
@@ -344,7 +358,7 @@ salesDF = salesDF.withColumn(
 )
 
 # Calculate total sales per day
-bestDaysDF: DataFrame = (
+bestDaysDF = (
     salesDF.withColumn("totalSales", F.col("productPrice") * F.col("productCount"))
     .groupBy("orderDate")
     .agg(F.sum("totalSales").alias("totalSales"))
@@ -395,8 +409,6 @@ bestDaysDF.show()
 
 # COMMAND ----------
 
-# identifier for your target folder to separate your streaming test from the others running at the same time
-# this should only contain alphanumeric characters or underscores
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
 # identifier for your target folder to separate your streaming test from the others running at the same time
 # this should only contain alphanumeric characters or underscores
@@ -441,6 +453,9 @@ salesStreamingDF: DataFrame = spark.readStream.schema(schema).csv(myStreamingFol
 
 # COMMAND ----------
 
+from pyspark.sql import functions as F
+
+# Calculate total sales and total count
 bestDaysStreamingDF = (
     salesStreamingDF.withColumn("totalSales", F.col("productPrice") * F.col("productCount"))
     .groupBy("orderDate")
@@ -470,6 +485,7 @@ bestDaysStreamingDF = (
 # COMMAND ----------
 
 def showQueryState(streamingQueryName: str) -> None:
+    print ("streamingQueryName", streamingQueryName)
     spark \
         .sql(f"SELECT * from {streamingQueryName}") \
         .show(8)
@@ -484,6 +500,7 @@ def removeFiles(folder: str) -> None:
         pass
 
 def copyFiles(streamingQueryName: str, targetFolder: str) -> None:
+    print(streamingQueryName)
     # There can be delays with the streaming data frame processing. You can try to adjust these wait times if you want.
     waitAfterFirstCopy: int = 15
     normalTimeInterval: int = 10
