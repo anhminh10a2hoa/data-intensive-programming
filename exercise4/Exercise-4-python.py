@@ -84,11 +84,10 @@ dataRDD: RDD[Row] = spark.sparkContext.parallelize(hugeSequenceOfXYData)
 
 # COMMAND ----------
 
-dataDF: DataFrame = ???
+dataDF: DataFrame = dataRDD.map(lambda row: Row(X=row[0], label=row[1])).toDF()
 
 # Split the data into training and testing datasets (roughly 80% for training, 20% for testing)
-trainingDF: DataFrame = ???
-testDF: DataFrame = ???
+trainingDF, testDF = dataDF.randomSplit([0.8, 0.2], seed=1)
 
 print(f"Training set size: {trainingDF.count()}")
 print(f"Test set size: {testDF.count()}")
@@ -131,21 +130,21 @@ trainingDF.show(6)
 
 # COMMAND ----------
 
-vectorAssembler: VectorAssembler = ???
+vectorAssembler: VectorAssembler = VectorAssembler(inputCols=["X"], outputCol="features")
 
-assembledTrainingDF: DataFrame = ???
+assembledTrainingDF: DataFrame = vectorAssembler.transform(trainingDF)
 
 assembledTrainingDF.printSchema()
 assembledTrainingDF.show(6)
 
 # COMMAND ----------
 
-lr: LinearRegression = ???
+lr: LinearRegression = LinearRegression(featuresCol="features", labelCol="label")
 
 # you can print explanations for all the parameters that can be used for linear regression by uncommenting the following:
 # print(lr.explainParams())
 
-lrModel: LinearRegressionModel = ???
+lrModel: LinearRegressionModel = lr.fit(assembledTrainingDF)
 
 # print out a sample of the predictions
 lrModel.summary.predictions.show(6)
@@ -203,18 +202,23 @@ lrModel.summary.predictions.show(6)
 
 # COMMAND ----------
 
-testPredictions: DataFrame = ???
+assembledTestDF: DataFrame = vectorAssembler.transform(testDF)
+testPredictions: DataFrame = lrModel.transform(assembledTestDF)
 
 testPredictions.show(6)
 
 
 # all shown setters are optional, since they use the default values
-testEvaluator: RegressionEvaluator = ???
+testEvaluator: RegressionEvaluator = RegressionEvaluator(
+    predictionCol="prediction",
+    labelCol="label",
+    metricName="rmse"
+)
 
 # you can print explanations for all the parameters that can be used for the regression evaluator by uncommenting the following:
 # print(testEvaluator.explainParams())
 
-testError: float = ???
+testError: float = testEvaluator.evaluate(testPredictions)
 print(f"The RMSE for the model is {testError}")
 
 # COMMAND ----------
@@ -278,7 +282,19 @@ pyplot.show()
 
 # COMMAND ----------
 
-???
+# Create a DataFrame with the required `X` values for prediction
+new_values = [-2.8, 3.14, 9.9, 123.45]
+new_data = spark.createDataFrame([(x,) for x in new_values], ["X"])
+
+# Assemble the input `X` into the required `features` column
+vector_assembler = VectorAssembler(inputCols=["X"], outputCol="features")
+new_data_with_features = vector_assembler.transform(new_data)
+
+# Use the trained Linear Regression model to make predictions
+predictions = lrModel.transform(new_data_with_features)
+
+# Show the predictions
+predictions.select("X", "prediction").show()
 
 # COMMAND ----------
 
@@ -313,10 +329,30 @@ pyplot.show()
 
 # COMMAND ----------
 
-salesDF: DataFrame = ???
+# Read the CSV file with the correct delimiter
+salesDF: DataFrame = spark.read.csv(
+    "abfss://shared@tunics320f2024gen2.dfs.core.windows.net/exercises/ex4/static/superstore_sales.csv",
+    header=True,
+    inferSchema=True,
+    sep=";"  # Specify semicolon as the delimiter
+)
 
-bestDaysDF: DataFrame = ???
+# Clean productPrice and convert it to numeric type
+salesDF = salesDF.withColumn(
+    "productPrice",
+    F.regexp_replace(F.col("productPrice"), r"[^\d.]", "").cast(DoubleType())
+)
 
+# Calculate total sales per day
+bestDaysDF: DataFrame = (
+    salesDF.withColumn("totalSales", F.col("productPrice") * F.col("productCount"))
+    .groupBy("orderDate")
+    .agg(F.sum("totalSales").alias("totalSales"))
+    .orderBy(F.desc("totalSales"))
+    .limit(8)
+)
+
+# Show the results
 bestDaysDF.show()
 
 # COMMAND ----------
@@ -361,7 +397,24 @@ bestDaysDF.show()
 
 # identifier for your target folder to separate your streaming test from the others running at the same time
 # this should only contain alphanumeric characters or underscores
-myStreamingIdentifier: str = ???
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, IntegerType, DateType
+# identifier for your target folder to separate your streaming test from the others running at the same time
+# this should only contain alphanumeric characters or underscores
+schema = StructType([
+    StructField("orderId", StringType(), True),
+    StructField("orderDate", DateType(), True),
+    StructField("customerId", StringType(), True),
+    StructField("country", StringType(), True),
+    StructField("city", StringType(), True),
+    StructField("productId", StringType(), True),
+    StructField("category", StringType(), True),
+    StructField("subCategory", StringType(), True),
+    StructField("productPrice", DoubleType(), True),
+    StructField("productCount", IntegerType(), True),
+    StructField("shipDate", DateType(), True),
+    StructField("shipMode", StringType(), True)
+])
+myStreamingIdentifier: str = "minh_hoang"
 
 # setup the address for your folder in the students container in the Azure storage
 myStreamingFolder: str = f"abfss://students@tunics320f2024gen2.dfs.core.windows.net/ex4/{myStreamingIdentifier}/"
@@ -369,7 +422,7 @@ myStreamingFolder: str = f"abfss://students@tunics320f2024gen2.dfs.core.windows.
 dbutils.fs.mkdirs(myStreamingFolder)
 
 
-salesStreamingDF: DataFrame = ???
+salesStreamingDF: DataFrame = spark.readStream.schema(schema).csv(myStreamingFolder)
 
 # COMMAND ----------
 
@@ -388,7 +441,15 @@ salesStreamingDF: DataFrame = ???
 
 # COMMAND ----------
 
-bestDaysStreamingDF: DataFrame = ???
+bestDaysStreamingDF = (
+    salesStreamingDF.withColumn("totalSales", F.col("productPrice") * F.col("productCount"))
+    .groupBy("orderDate")
+    .agg(
+        F.sum("totalSales").alias("totalPrice"),
+        F.sum("productCount").alias("totalCount")
+    )
+    .orderBy(F.desc("totalPrice"))  # Sort by total sales
+)
 
 # COMMAND ----------
 
@@ -458,7 +519,13 @@ streamQueryName: str = f"ex4_{myStreamingIdentifier}"
 
 
 # start the streaming query with the memory format and the query name set to the value of `streamQueryName`
-myStreamingQuery: StreamingQuery = ???
+myStreamingQuery: StreamingQuery = (
+    bestDaysStreamingDF.writeStream
+    .outputMode("complete")  # We use complete mode for aggregations
+    .format("memory")  # Output to memory for easy access
+    .queryName(streamQueryName)
+    .start()
+)
 
 
 # call the helper function to copy files to the target folder to simulate a streaming data
